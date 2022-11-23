@@ -2,8 +2,6 @@ defmodule FeatureSupervisor.Manager do
   @moduledoc false
   use GenServer
 
-  require Logger
-
   defmodule State do
     @moduledoc false
     defstruct children: [],
