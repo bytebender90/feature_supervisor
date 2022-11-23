@@ -85,16 +85,17 @@ defmodule FeatureSupervisor do
       enabled? = enabled?(spec)
       present? = id in present_children
       started? = id in started_children
+      permanent? = Map.get(spec, :restart, :permanent) == :permanent
 
       cond do
-        enabled? and not started? and present? ->
+        enabled? and present? and permanent? and not started? ->
           case Supervisor.restart_child(supervisor, id) do
             {:ok, pid} -> log_started(spec, pid)
             {:ok, pid, _info} -> log_started(spec, pid)
             {:error, error} -> log_error(spec, error)
           end
 
-        enabled? and not started? ->
+        enabled? and not present? ->
           # make dialyzer happy
           spec = Map.delete(spec, :enabled?)
 
@@ -105,10 +106,8 @@ defmodule FeatureSupervisor do
           end
 
         not enabled? and started? ->
-          case Supervisor.terminate_child(supervisor, id) do
-            :ok -> Logger.info("[FeatureSupervisor] terminated child #{inspect(id)}")
-            {:error, :not_found} -> :ok
-          end
+          Supervisor.terminate_child(supervisor, id)
+          Logger.info("[FeatureSupervisor] terminated child #{inspect(id)}")
 
         true ->
           :ok
