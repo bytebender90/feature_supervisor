@@ -1,6 +1,8 @@
 defmodule FeatureSupervisorTest do
   use ExUnit.Case
 
+  @moduletag :capture_log
+
   describe "init/2" do
     test "equal to Supervisor.init/2 when used with static only children" do
       children = [
