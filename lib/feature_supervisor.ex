@@ -55,18 +55,17 @@ defmodule FeatureSupervisor do
            {Supervisor.sup_flags(),
             [Supervisor.child_spec() | (old_erlang_child_spec :: :supervisor.child_spec())]}}
   def init(children, options) do
-    {refresh_interval, options} = Keyword.pop(options, :refresh_interval)
     {:ok, {sup_flags, children}} = Supervisor.init(children, options)
     {feature_children, children} = Enum.split_with(children, &feature_children?/1)
     children = children ++ Enum.filter(feature_children, &enabled?/1)
 
     children =
-      if refresh_interval do
+      if (int = Keyword.get(options, :refresh_interval)) && length(feature_children) > 0 do
         children ++
           [
             FeatureSupervisor.Manager.child_spec(
               children: feature_children,
-              refresh_interval: refresh_interval,
+              refresh_interval: int,
               supervisor: Keyword.get(options, :name, __MODULE__)
             )
           ]
@@ -80,36 +79,39 @@ defmodule FeatureSupervisor do
   @doc false
   @spec refresh(Supervisor.supervisor(), [Supervisor.child_spec()]) :: :ok
   def refresh(supervisor \\ __MODULE__, children) do
-    for spec <- children, feature_children?(spec) do
-      if enabled?(spec) do
-        # make dialyzer happy
-        spec = Map.delete(spec, :enabled?)
+    {present_children, started_children} = group_children(supervisor)
 
-        case Supervisor.start_child(supervisor, spec) do
-          {:ok, pid} ->
-            log_started(spec, pid)
+    for %{id: id} = spec <- children, feature_children?(spec) do
+      enabled? = enabled?(spec)
+      present? = id in present_children
+      started? = id in started_children
 
-          {:ok, pid, _info} ->
-            log_started(spec, pid)
+      cond do
+        enabled? and not started? and present? ->
+          case Supervisor.restart_child(supervisor, id) do
+            {:ok, pid} -> log_started(spec, pid)
+            {:ok, pid, _info} -> log_started(spec, pid)
+            {:error, error} -> log_error(spec, error)
+          end
 
-          {:error, {:already_started, _pid}} ->
-            :ok
+        enabled? and not started? ->
+          # make dialyzer happy
+          spec = Map.delete(spec, :enabled?)
 
-          {:error, :already_present} ->
-            case Supervisor.restart_child(supervisor, spec.id) do
-              {:ok, pid} -> log_started(spec, pid)
-              {:ok, pid, _info} -> log_started(spec, pid)
-              {:error, error} -> log_error(spec, error)
-            end
+          case Supervisor.start_child(supervisor, spec) do
+            {:ok, pid} -> log_started(spec, pid)
+            {:ok, pid, _info} -> log_started(spec, pid)
+            {:error, error} -> log_error(spec, error)
+          end
 
-          {:error, error} ->
-            log_error(spec, error)
-        end
-      else
-        case Supervisor.terminate_child(supervisor, spec.id) do
-          :ok -> Logger.info("[FeatureSupervisor] terminated child #{inspect(spec.id)}")
-          {:error, :not_found} -> :ok
-        end
+        not enabled? and started? ->
+          case Supervisor.terminate_child(supervisor, id) do
+            :ok -> Logger.info("[FeatureSupervisor] terminated child #{inspect(id)}")
+            {:error, :not_found} -> :ok
+          end
+
+        true ->
+          :ok
       end
     end
 
@@ -120,6 +122,14 @@ defmodule FeatureSupervisor do
 
   defp enabled?(%{enabled?: val}) when is_boolean(val), do: val
   defp enabled?(%{enabled?: fun} = spec) when is_function(fun, 1), do: fun.(spec)
+
+  defp group_children(supervisor) do
+    supervisor
+    |> Supervisor.which_children()
+    |> Enum.reduce({[], []}, fn {id, pid, _type, _modules}, {present, started} ->
+      {[id | present], if(is_pid(pid), do: [id | started], else: started)}
+    end)
+  end
 
   defp log_started(spec, pid) do
     Logger.info("[FeatureSupervisor] started child #{inspect(spec.id)} #{inspect(pid)}")

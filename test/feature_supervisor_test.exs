@@ -34,7 +34,7 @@ defmodule FeatureSupervisorTest do
              ] = children
     end
 
-    test "includes the manager child when the :refresh_interval option is present" do
+    test "appends the manager child when the :refresh_interval option is present and there are feature children" do
       children = [
         FeatureSupervisor.child_spec({Agent, fn -> :ok end}, id: :child1),
         FeatureSupervisor.child_spec({Agent, fn -> :ok end}, id: :child2, enabled?: true),
