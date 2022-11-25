@@ -3,202 +3,158 @@ defmodule FeatureSupervisorTest do
 
   import FeatureSupervisor, only: [child_spec: 2]
 
-  @moduletag :capture_log
+  alias FeatureSupervisor.Manager
 
-  describe "init/2" do
-    test "equal to Supervisor.init/2 when used with static only children" do
-      children = [
-        child_spec({Agent, fn -> :ok end}, id: :child1),
-        child_spec({Agent, fn -> :ok end}, id: :child2),
-        child_spec({Agent, fn -> :ok end}, id: :child3)
-      ]
+  defmodule Child do
+    use Agent
 
-      assert {:ok, {flags, children}} = FeatureSupervisor.init(children, strategy: :one_for_one)
-      assert %{strategy: :one_for_one, intensity: 3, period: 5} = flags
+    def start_link(opts) do
+      Agent.start_link(
+        fn ->
+          case opts[:send] do
+            {pid, msg} -> send(pid, {self(), msg})
+            nil -> :ok
+          end
 
-      assert [
-               %{id: :child1},
-               %{id: :child2},
-               %{id: :child3}
-             ] = children
-    end
-
-    test "excludes disabled children" do
-      children = [
-        child_spec({Agent, fn -> :ok end}, id: :child1),
-        child_spec({Agent, fn -> :ok end}, id: :child2, enabled?: true),
-        child_spec({Agent, fn -> :ok end}, id: :child3, enabled?: false)
-      ]
-
-      assert {:ok, {_flags, children}} = FeatureSupervisor.init(children, strategy: :one_for_one)
-
-      assert [
-               %{id: :child1},
-               %{id: :child2}
-             ] = children
-    end
-
-    test "appends the manager child when the :refresh_interval option is present and there are feature children" do
-      children = [
-        child_spec({Agent, fn -> :ok end}, id: :child1),
-        child_spec({Agent, fn -> :ok end}, id: :child2, enabled?: true),
-        child_spec({Agent, fn -> :ok end}, id: :child3, enabled?: false)
-      ]
-
-      assert {:ok, {_flags, children}} =
-               FeatureSupervisor.init(children,
-                 strategy: :one_for_one,
-                 refresh_interval: 1000
-               )
-
-      assert [
-               %{id: :child1},
-               %{id: :child2},
-               %{id: FeatureSupervisor.Manager, start: {_, _, [monitor_options]}}
-             ] = children
-
-      assert [
-               %{id: :child2},
-               %{id: :child3}
-             ] = monitor_options[:children]
+          opts[:state]
+        end,
+        opts
+      )
     end
   end
 
-  describe "refresh/2" do
-    test "starts a child when its feature enabled" do
+  @moduletag :capture_log
+
+  describe "group_children/2" do
+    test "splits children into 'static' and 'features' groups" do
       children = [
-        child_spec({Agent, fn -> :ok end}, id: :child1),
-        child_spec({Agent, fn -> :ok end}, id: :child2, enabled?: true),
-        child_spec({Agent, fn -> :ok end}, id: :child3, enabled?: false)
+        Child,
+        child_spec(Child, id: :child2, enabled?: true),
+        child_spec(Child, id: :child3, enabled?: false),
+        child_spec(Child, id: :child4, enabled?: fn _ -> true end)
+      ]
+
+      assert {
+               static,
+               dynamic
+             } = FeatureSupervisor.group_children(children)
+
+      assert [
+               %{id: Child},
+               %{id: :child2}
+             ] = static
+
+      assert [
+               %{id: :child4}
+             ] = dynamic
+    end
+  end
+
+  describe "start_link/2" do
+    test "works with static only children" do
+      children = [
+        child_spec(Child, id: :child1),
+        child_spec(Child, id: :child2, enabled?: false),
+        child_spec(Child, id: :child3, enabled?: true)
       ]
 
       {:ok, sup} = FeatureSupervisor.start_link(children, strategy: :one_for_one)
-
-      assert [
-               {:child2, _, _, _},
-               {:child1, _, _, _}
-             ] = Supervisor.which_children(sup)
-
-      children =
-        children
-        |> List.update_at(2, &child_spec(&1, enabled?: true))
-
-      assert :ok = FeatureSupervisor.refresh(sup, children)
 
       assert [
                {:child3, _, _, _},
-               {:child2, _, _, _},
                {:child1, _, _, _}
              ] = Supervisor.which_children(sup)
     end
 
-    test "terminates a child when its feature disabled" do
+    test "works with dynamic children" do
       children = [
-        child_spec({Agent, fn -> :ok end}, id: :child1),
-        child_spec({Agent, fn -> :ok end}, id: :child2, enabled?: true),
-        child_spec({Agent, fn -> :ok end}, id: :child3, enabled?: true)
+        child_spec(Child, id: :child1),
+        child_spec({Child, send: {self(), :up2}}, id: :child2, enabled?: fn _ -> false end),
+        child_spec({Child, send: {self(), :up3}}, id: :child3, enabled?: fn _ -> true end)
       ]
 
       {:ok, sup} = FeatureSupervisor.start_link(children, strategy: :one_for_one)
 
-      assert [
-               {:child3, pid3, _, _},
-               {:child2, pid2, _, _},
-               {:child1, pid1, _, _}
-             ] = Supervisor.which_children(sup)
-
-      children =
-        children
-        |> List.update_at(1, &child_spec(&1, enabled?: false))
-        |> List.update_at(2, &child_spec(&1, enabled?: false))
-
-      assert :ok = FeatureSupervisor.refresh(sup, children)
+      assert_receive {pid3, :up3}
 
       assert [
-               {:child3, :undefined, _, _},
-               {:child2, :undefined, _, _},
-               {:child1, ^pid1, _, _}
+               {:child3, ^pid3, _, _},
+               {Manager, _, _, _},
+               {:child1, _, _, _}
              ] = Supervisor.which_children(sup)
-
-      assert Process.alive?(pid1)
-      refute Process.alive?(pid2)
-      refute Process.alive?(pid3)
     end
 
-    test "restarts a non-permanent child when its feature re-enabled" do
+    test "manages dynamic children in the sync mode" do
+      me = self()
+      enabled? = fn %{id: id} -> Agent.get(:store, &Map.fetch!(&1, id)) end
+
       children = [
-        child_spec({Agent, fn -> :ok end}, id: :child1),
-        child_spec({Agent, fn -> :ok end}, id: :child2, enabled?: true),
-        child_spec({Agent, fn -> :ok end}, id: :child3, enabled?: true, restart: :transient)
+        child_spec({Child, state: %{child2: false, child3: true}, name: :store}, id: :child1),
+        child_spec({Child, send: {me, :up2}}, id: :child2, enabled?: enabled?),
+        child_spec({Child, send: {me, :up3}}, id: :child3, enabled?: enabled?)
       ]
 
-      {:ok, sup} = FeatureSupervisor.start_link(children, strategy: :one_for_one)
-      # simulate feature disabling
-      assert :ok = Supervisor.terminate_child(sup, :child2)
-      assert :ok = Supervisor.terminate_child(sup, :child3)
+      {:ok, sup} =
+        FeatureSupervisor.start_link(children,
+          strategy: :one_for_one,
+          sync_interval: 10
+        )
 
-      assert :ok = FeatureSupervisor.refresh(sup, children)
+      assert_receive {pid3, :up3}
+      Process.monitor(pid3)
 
       assert [
-               {:child3, :undefined, _, _},
-               {:child2, pid2, _, _},
-               {:child1, pid1, _, _}
+               {:child3, _, _, _},
+               {Manager, _, _, _},
+               {:child1, _, _, _}
              ] = Supervisor.which_children(sup)
 
-      assert Process.alive?(pid1)
-      assert Process.alive?(pid2)
+      Agent.update(:store, fn _ -> %{child2: true, child3: false} end)
+
+      assert_receive {pid2, :up2}
+      assert_receive {:DOWN, _ref, :process, ^pid3, :shutdown}
+
+      assert [
+               {:child2, ^pid2, _, _},
+               {:child3, :undefined, _, _},
+               {Manager, _, _, _},
+               {:child1, _, _, _}
+             ] = Supervisor.which_children(sup)
     end
-  end
 
-  describe "automatic refresh" do
-    test "works" do
-      init_store = fn ->
-        %{
-          feature1: true,
-          feature2: false
-        }
-      end
-
-      enabled? = fn %{feat_id: feat_id} ->
-        try do
-          Agent.get(:store, &Map.fetch!(&1, feat_id))
-        catch
-          :exit, {:noproc, _} -> false
-        end
-      end
+    test "does not restart temporary children in the sync mode" do
+      me = self()
 
       children = [
-        %{
-          id: :child1,
-          start: {:erlang, :apply, [Agent, :start_link, [init_store, [name: :store]]]}
-        },
-        child_spec({Agent, fn -> :ok end}, id: :child2, feat_id: :feature1, enabled?: enabled?),
-        child_spec({Agent, fn -> :ok end}, id: :child3, feat_id: :feature2, enabled?: enabled?)
+        child_spec({Task, fn -> send(me, {:task1, self()}) end},
+          id: :task1,
+          restart: :temporary,
+          enabled?: fn _ -> true end
+        ),
+        child_spec({Task, fn -> send(me, {:task2, self()}) end},
+          id: :task2,
+          restart: :transient,
+          enabled?: fn _ -> true end
+        )
       ]
 
-      refresh_interval = 10
+      {:ok, _sup} =
+        FeatureSupervisor.start_link(children,
+          strategy: :one_for_one,
+          sync_interval: 10
+        )
 
-      assert {:ok, sup_pid} =
-               FeatureSupervisor.start_link(children,
-                 refresh_interval: refresh_interval,
-                 strategy: :one_for_one,
-                 name: __MODULE__
-               )
+      assert_receive {:task1, pid1}
+      assert_receive {:task2, pid2}
 
-      assert [
-               {FeatureSupervisor.Manager, pid, _, _},
-               {:child1, _, _, _}
-             ] = Supervisor.which_children(sup_pid)
+      Process.monitor(pid1)
+      Process.monitor(pid2)
 
-      Process.sleep(refresh_interval)
-      # wait for the monitor to finish refreshing
-      :sys.get_state(pid)
+      assert_receive {:DOWN, _ref, :process, ^pid1, _reason}
+      assert_receive {:DOWN, _ref, :process, ^pid2, _reason}
 
-      assert [
-               {:child2, _, _, _},
-               {FeatureSupervisor.Manager, _, _, _},
-               {:child1, _, _, _}
-             ] = Supervisor.which_children(sup_pid)
+      refute_receive {:task1, _}, 20
+      refute_receive {:task2, _}, 20
     end
   end
 end

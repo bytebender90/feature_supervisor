@@ -40,7 +40,7 @@ defmodule MyApp.Application do
     ]
 
     # will call Supervisor.start_link/2 but with modified children
-    FeatureSupervisor.start_link(children, strategy: :one_for_one, refresh_interval: 1000)
+    FeatureSupervisor.start_link(children, strategy: :one_for_one, sync_interval: 1000)
   end
 
   defp feature_enabled?(spec) do
