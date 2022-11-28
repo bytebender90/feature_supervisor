@@ -1,8 +1,9 @@
 defmodule FeatureSupervisor do
   @moduledoc """
-  A wrapper for built-in `Supervisor` that allows starting a certain child only if the feature
-  that it corresponds to is enabled.
+  A wrapper for built-in `Supervisor` that allows starting children only if the features that they
+  correspond to are enabled.
   """
+
   alias FeatureSupervisor.Manager
 
   @type child ::
@@ -29,8 +30,9 @@ defmodule FeatureSupervisor do
   `Supervisor.start_child/2` function by a different process (the child spec of which will be
   appended to the children) and only if the function given in the `:enabled?` field returns `true`.
 
-  If a "dynamic" child is expected to be started/terminated later you should provide
-  the `sync_interval` option.
+  If a "dynamic" child is expected to be started/terminated later (via a feature flag, for example)
+  you should provide the `sync_interval` option. Keep in mind though that this won't work with
+  children where the `:restart` field is set to `:temporary` or `:transient`.
   """
   @spec start_link([child()], [Supervisor.option() | Supervisor.init_option() | option()]) ::
           {:ok, pid} | {:error, {:already_started, pid} | {:shutdown, term} | term}

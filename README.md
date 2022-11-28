@@ -1,6 +1,6 @@
 # FeatureSupervisor
 
-Elixir Supervisor but with the ability to toggle children.
+A wrapper for built-in `Supervisor` that allows starting children only if the features that they correspond to are enabled.
 
 ## Installation
 
@@ -21,7 +21,7 @@ be found at <https://hexdocs.pm/feature_supervisor>.
 
 ## Usage
 
-`FeatureSupervisor` is a simple wrapper for built-in `Supervisor` and can be used exactly the same way.
+Since `FeatureSupervisor` is a simple wrapper for built-in `Supervisor` it can be used exactly the same way.
 
 ```elixir
 defmodule MyApp.Application do
@@ -39,7 +39,7 @@ defmodule MyApp.Application do
       FeatureSupervisor.child_spec({Child3, name: Child3}, enabled?: &feature_enabled?/1, feature_id: "my-feature")
     ]
 
-    # will call Supervisor.start_link/2 but with modified children
+    # modifies (if necessary) the children list and passes it to `Supervisor.start_link/2`
     FeatureSupervisor.start_link(children, strategy: :one_for_one, sync_interval: 1000)
   end
 

@@ -23,34 +23,36 @@ defmodule FeatureSupervisor.Manager do
       sync_interval: Keyword.get(opts, :sync_interval)
     }
 
-    {:ok, state, {:continue, :sync}}
+    {:ok, state, {:continue, :start}}
   end
 
   @impl true
-  def handle_continue(:sync, %State{} = state) do
-    children = sync(state.children, state.supervisor)
+  def handle_continue(:start, %State{sync_interval: nil} = state) do
+    sync(state.children, state.supervisor)
+    {:stop, :normal, state}
+  end
 
-    if Enum.empty?(children) or is_nil(state.sync_interval) do
-      {:stop, :normal, %{state | children: children}}
-    else
-      timer = Process.send_after(self(), :timer_end, state.sync_interval)
-      {:noreply, %{state | children: children, timer: timer}}
-    end
+  def handle_continue(:start, %State{} = state) do
+    sync(state.children, state.supervisor)
+    children = Enum.reject(state.children, &temporary?/1)
+    timer = Process.send_after(self(), :sync, state.sync_interval)
+    {:noreply, %{state | children: children, timer: timer}}
   end
 
   @impl true
-  def handle_info(:timer_end, state) do
-    {:noreply, state, {:continue, :sync}}
+  def handle_info(:sync, %State{} = state) do
+    sync(state.children, state.supervisor)
+    timer = Process.send_after(self(), :sync, state.sync_interval)
+    {:noreply, %{state | timer: timer}}
   end
 
-  @spec sync([Supervisor.child_spec()], Supervisor.supervisor()) :: [Supervisor.child_spec()]
-  def sync(children, supervisor) do
+  defp sync(children, supervisor) do
     {present_ids, started_ids} =
       supervisor
       |> Supervisor.which_children()
       |> group_supervisor_children()
 
-    Enum.reject(children, fn %{id: id} = spec ->
+    for %{id: id} = spec <- children do
       enabled? = enabled?(spec)
       present? = id in present_ids
       started? = id in started_ids
@@ -80,9 +82,9 @@ defmodule FeatureSupervisor.Manager do
         true ->
           :ok
       end
+    end
 
-      _reject? = enabled? and temporary?(spec)
-    end)
+    :ok
   end
 
   defp enabled?(%{enabled?: fun} = spec) when is_function(fun, 1), do: fun.(spec)
