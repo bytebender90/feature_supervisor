@@ -46,9 +46,9 @@ defmodule FeatureSupervisor do
   @doc """
   Same as `Supervisor.child_spec/2` but allows any key in the overrides.
   """
-  @spec child_spec(Supervisor.child_spec(), Keyword.t()) :: map()
-  def child_spec(spec, overrides) do
-    spec
+  @spec child_spec(child(), Keyword.t()) :: map()
+  def child_spec(child, overrides) do
+    child
     |> Supervisor.child_spec([])
     |> Map.merge(Map.new(overrides))
   end
