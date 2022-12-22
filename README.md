@@ -2,7 +2,10 @@
 
 [![CI](https://github.com/nmbrone/feature_supervisor/actions/workflows/ci.yml/badge.svg)](https://github.com/nmbrone/feature_supervisor/actions/workflows/ci.yml)
 
-A wrapper for built-in `Supervisor` that allows starting children only if the features that they correspond to are enabled.
+A simple wrapper for built-in `Supervisor` that allows you to:
+
+- dynamically toggle a child via a feature flag
+- enable/disable a child in a specific environment
 
 ## Installation
 
@@ -16,9 +19,9 @@ def deps do
 end
 ```
 
-## Usage
+## How to use
 
-Since `FeatureSupervisor` is a simple wrapper for built-in `Supervisor` it can be used exactly the same way.
+`FeatureSupervisor` can be used the same way you would use `Supervisor`.
 
 ```elixir
 defmodule MyApp.Application do
@@ -31,12 +34,14 @@ defmodule MyApp.Application do
       # a regular child
       Child1,
       # supposed to be disabled in tests
-      FeatureSupervisor.child_spec(Child2, enabled?: @mix_env != :test)
+      FeatureSupervisor.child_spec(Child2, enabled?: @mix_env != :test),
       # supposed to run only when the feature is enabled
-      FeatureSupervisor.child_spec({Child3, name: Child3}, enabled?: &feature_enabled?/1, feature_id: "my-feature")
+      FeatureSupervisor.child_spec({Child3, name: Child3},
+        enabled?: &feature_enabled?/1,
+        feature_id: "my-feature"
+      )
     ]
 
-    # modifies (if necessary) the children list and passes it to `Supervisor.start_link/2`
     FeatureSupervisor.start_link(children, strategy: :one_for_one, sync_interval: 1000)
   end
 

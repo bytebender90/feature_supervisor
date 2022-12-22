@@ -9,7 +9,7 @@ defmodule FeatureSupervisor.MixProject do
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       name: "FeatureSupervisor",
-      description: description(),
+      description: "Supervisor for features",
       source_url: "https://github.com/nmbrone/feature_supervisor",
       homepage_url: "https://github.com/nmbrone/feature_supervisor",
       package: [
@@ -34,10 +34,5 @@ defmodule FeatureSupervisor.MixProject do
     [
       {:ex_doc, "~> 0.29.1", only: :dev, runtime: false}
     ]
-  end
-
-  defp description do
-    "A wrapper for built-in Supervisor which allows starting children " <>
-      "only if the features they correspond to are enabled."
   end
 end

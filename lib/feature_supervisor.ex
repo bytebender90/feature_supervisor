@@ -22,17 +22,16 @@ defmodule FeatureSupervisor do
   * "static" - those without the `:enabled?` field or with `enabled?: true`
   * "dynamic" - those with `enabled?: (spec -> boolean())`
 
-  Specs with `enabled?: false` will be excluded from the children.
+  Specs with `enabled?: false` will be excluded from the children list.
 
-  The "static" children will be started as usual.
+  The "static" children will be started as normal.
 
-  The "dynamic" children (if any) won't be started immediately but instead will be started via the
-  `Supervisor.start_child/2` function by a different process (the child spec of which will be
-  appended to the children) and only if the function given in the `:enabled?` field returns `true`.
+  The "dynamic" children (if any) will be started separately via the `Supervisor.start_child/2`
+  function.
 
   If a "dynamic" child is expected to be started/terminated later (via a feature flag, for example)
-  you should provide the `sync_interval` option. Keep in mind though that this won't work with
-  children where the `:restart` field is set to `:temporary` or `:transient`.
+  you should provide the `sync_interval` option. But keep in mind that this will work only for
+  permanent children.
   """
   @spec start_link([child()], [Supervisor.option() | Supervisor.init_option() | option()]) ::
           {:ok, pid} | {:error, {:already_started, pid} | {:shutdown, term} | term}
@@ -61,6 +60,7 @@ defmodule FeatureSupervisor do
 
   Specs with `enabled?: false` will be excluded.
   """
+  @spec group_children([child()]) :: {static :: [map()], dynamic :: [map()]}
   def group_children(children) do
     children
     |> Enum.reverse()
