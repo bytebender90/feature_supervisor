@@ -11,7 +11,7 @@ The package can be installed by adding `feature_supervisor` to your list of depe
 ```elixir
 def deps do
   [
-    {:feature_supervisor, "~> 0.0.1"} # {x-release-please-version}
+    {:feature_supervisor, "~> 0.1.0"} # {x-release-please-version}
   ]
 end
 ```
