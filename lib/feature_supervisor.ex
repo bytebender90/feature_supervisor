@@ -1,7 +1,34 @@
 defmodule FeatureSupervisor do
   @moduledoc """
-  A wrapper for built-in `Supervisor` that allows starting children only if the features that they
-  correspond to are enabled.
+  A small wrapper for `Supervisor` that dynamically starts/terminates children based on feature flags.
+
+  ## Example
+
+      defmodule MyApp.Application do
+        use Application
+
+        @mix_env Mix.env()
+
+        def start(_type, _args) do
+          children = [
+            # a regular child
+            Child1,
+            # supposed to be disabled in tests
+            FeatureSupervisor.child_spec(Child2, enabled?: @mix_env != :test),
+            # supposed to run only when the feature is enabled
+            FeatureSupervisor.child_spec({Child3, name: Child3},
+              enabled?: &feature_enabled?/1,
+              feature_id: "my-feature"
+            )
+          ]
+
+          FeatureSupervisor.start_link(children, strategy: :one_for_one, sync_interval: 1000)
+        end
+
+        defp feature_enabled?(spec) do
+          MyApp.Features.enabled?(spec.feature_id)
+        end
+      end
   """
 
   alias FeatureSupervisor.Manager
@@ -15,23 +42,21 @@ defmodule FeatureSupervisor do
   @type option :: {:sync_interval, non_neg_integer()}
 
   @doc """
-  A wrapper for `Supervisor.start_link/2`.
+  Wraps the `Supervisor.start_link/2` function.
 
-  The children will be split into two groups:
+  Children will be split into two groups:
 
   * "static" - those without the `:enabled?` field or with `enabled?: true`
-  * "dynamic" - those with `enabled?: (spec -> boolean())`
+  * "dynamic" - those with the `:enabled?` field set to a function
 
-  Specs with `enabled?: false` will be excluded from the children list.
+  Children with `enabled?: false` will be excluded.
 
-  The "static" children will be started as normal.
+  "static" children will be started as normal.
 
-  The "dynamic" children (if any) will be started separately via the `Supervisor.start_child/2`
-  function.
+  "dynamic" children (if any) will be started separately via `Supervisor.start_child/2`.
 
-  If a "dynamic" child is expected to be started/terminated later (via a feature flag, for example)
-  you should provide the `sync_interval` option. But keep in mind that this will work only for
-  permanent children.
+  If a "dynamic" child is expected to be started/terminated later via a feature flag
+  you should provide the `sync_interval` option. The child's `:restart` option must be set to `:permanent`.
   """
   @spec start_link([child()], [Supervisor.option() | Supervisor.init_option() | option()]) ::
           {:ok, pid} | {:error, {:already_started, pid} | {:shutdown, term} | term}
@@ -52,14 +77,7 @@ defmodule FeatureSupervisor do
     |> Map.merge(Map.new(overrides))
   end
 
-  @doc """
-  Splits children into "static" and "dynamic" groups.
-
-  * "static" - those without the `:enabled?` field or with `enabled?: true`
-  * "dynamic" - those with `enabled?: (spec -> boolean())`
-
-  Specs with `enabled?: false` will be excluded.
-  """
+  @doc false
   @spec group_children([child()]) :: {static :: [map()], dynamic :: [map()]}
   def group_children(children) do
     children

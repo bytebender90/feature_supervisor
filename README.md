@@ -2,10 +2,7 @@
 
 [![CI](https://github.com/nmbrone/feature_supervisor/actions/workflows/ci.yml/badge.svg)](https://github.com/nmbrone/feature_supervisor/actions/workflows/ci.yml)
 
-A simple wrapper for built-in `Supervisor` that allows you to:
-
-- dynamically toggle a child via a feature flag
-- enable/disable a child in a specific environment
+A small wrapper for `Supervisor` that dynamically starts/terminates children based on feature flags.
 
 ## Installation
 
@@ -21,7 +18,7 @@ end
 
 ## How to use
 
-`FeatureSupervisor` can be used the same way you would use `Supervisor`.
+`FeatureSupervisor` should be used the same way you would use `Supervisor`.
 
 ```elixir
 defmodule MyApp.Application do
