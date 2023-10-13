@@ -1,12 +1,13 @@
 defmodule FeatureSupervisor.MixProject do
   use Mix.Project
 
+  @version "0.0.1"
   @source_url "https://github.com/nmbrone/feature_supervisor"
 
   def project do
     [
       app: :feature_supervisor,
-      version: "0.0.1",
+      version: @version,
       elixir: "~> 1.14",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
@@ -41,9 +42,7 @@ defmodule FeatureSupervisor.MixProject do
   defp docs do
     [
       main: "Readme",
-      # x-release-please-start-version
-      source_ref: "v0.0.1",
-      # x-release-please-end
+      source_ref: "v#{@version}",
       source_url: @source_url,
       extras: ["README.md"]
     ]
