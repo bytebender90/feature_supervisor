@@ -41,7 +41,7 @@ defmodule FeatureSupervisor.MixProject do
 
   defp docs do
     [
-      main: "Readme",
+      main: "readme",
       source_ref: "v#{@version}",
       source_url: @source_url,
       extras: ["README.md"]
